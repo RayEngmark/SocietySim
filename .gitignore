@@ -1,0 +1,24 @@
+## .NET Core
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.swp
+
+## Visual Studio
+.vs/
+*.userprefs
+
+## Rider
+.idea/
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild/
+bld/
+[Bb]in/
+[Oo]bj/
