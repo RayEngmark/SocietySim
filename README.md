@@ -56,13 +56,50 @@ dotnet restore
 dotnet run
 ```
 
+### Life Cycle & Genetics
+- **Aging System**: Agents progress through Child (60s) → Adult (5min) → Elder → Death (8min total)
+- **Genetic Inheritance**: Offspring inherit personality traits from parents with mutations
+- **Death & Mortality**: Agents die from old age or starvation (both resources depleted)
+- **Family Relationships**: Parents and children tracked
+
+### Day/Night Cycle
+- **Time System**: 2-minute day/night cycles with year tracking
+- **Dynamic Lighting**: Dawn, day, dusk, night with ambient overlay
+- **Sleep Behavior**: Agents rest at night near their homes
+- **Realistic Survival**: 2-3 minute survival times without resources
+
+## 📋 Implementation Plan
+
+**See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed roadmap**
+
+### Priority Features (Next Session):
+1. ✅ Corpse system with blood, rot, mood effects
+2. ✅ Wood gathering with chopping animations
+3. 🔲 Visual action indicators (replace text)
+4. 🔲 Town planning with organized zones
+5. 🔲 Pregnancy & realistic childbirth
+6. 🔲 Leadership & orders system
+7. 🔲 Cemetery & burial mechanics
+
+### Stretch Goals:
+- Seasons, disease, warfare
+- Religion, tech trees, trade routes
+- Advanced AI and emergent storytelling
+
 ## Project Structure
 
-- `Agent.cs` - Agent behavior, needs, and decision-making
-- `World.cs` - World simulation, camera, rendering
+### Core Systems
+- `Agent.cs` - Agent behavior, life cycle, personality, genetics
+- `World.cs` - World simulation, camera, time system
 - `Home.cs` - Home buildings with resource production
+- `Corpse.cs` - Dead body system with rot and mood effects
+- `Wood.cs` - Wood resource for building
+
+### Resources
 - `Food.cs` - Food resource with regeneration
 - `Water.cs` - Water resource with regeneration
+
+### Visuals
 - `Particle.cs` - Visual particle effects
 - `TerrainFeature.cs` - Environmental decorations
 - `Program.cs` - Entry point and game loop

@@ -9,9 +9,18 @@ class World
     private List<Food> foodSources = new();
     private List<Water> waterSources = new();
     private List<Home> homes = new();
+    private List<Corpse> corpses = new();
+    private List<Wood> woodSources = new();
     private List<Particle> particles = new();
     private List<TerrainFeature> terrainFeatures = new();
     private Random random = new();
+
+    // TIME SYSTEM - Day/Night cycle and seasons
+    private float worldTime = 0f; // Time in seconds
+    private const float DayLength = 120f; // 2 minute days
+    private const float YearLength = DayLength * 12f; // 12 days per year
+    private int currentDay = 1;
+    private int currentYear = 1;
 
     // Path tracking - stores intensity of foot traffic at tile coordinates
     private Dictionary<(int, int), float> pathIntensity = new();
@@ -60,6 +69,9 @@ class World
 
         // Spawn water in clusters (ponds)
         SpawnWaterClusters(80); // 80 ponds with 3-8 collection points each
+
+        // Spawn wood sources in forest clusters
+        SpawnWoodSources();
 
         // Spawn decorative terrain features
         SpawnTerrainFeatures();
@@ -142,6 +154,27 @@ class World
         }
     }
 
+    private void SpawnWoodSources()
+    {
+        // Spawn wood in small forest clusters
+        for (int i = 0; i < 15; i++)
+        {
+            Vector2 forestCenter = GetRandomWorldPosition();
+            int treesInForest = random.Next(5, 12);
+
+            for (int j = 0; j < treesInForest; j++)
+            {
+                float angle = (float)(random.NextDouble() * Math.PI * 2);
+                float distance = (float)(random.NextDouble() * 60 + 20);
+                Vector2 offset = new Vector2(
+                    MathF.Cos(angle) * distance,
+                    MathF.Sin(angle) * distance
+                );
+                woodSources.Add(new Wood(forestCenter + offset));
+            }
+        }
+    }
+
     private void SpawnTerrainFeatures()
     {
         // Spawn rocks (scattered)
@@ -207,6 +240,14 @@ class World
         // Smooth zoom interpolation
         cameraZoom += (targetZoom - cameraZoom) * 10f * deltaTime;
 
+        // TIME SYSTEM UPDATE - Track world time and days
+        worldTime += deltaTime;
+        currentDay = (int)(worldTime / DayLength) + 1;
+        currentYear = (int)(worldTime / YearLength) + 1;
+
+        // DEATH HANDLING - Remove dead agents from simulation
+        agents.RemoveAll(a => a.IsDead);
+
         foreach (var agent in agents.ToList()) // Use ToList to avoid modification during iteration
         {
             agent.Update(deltaTime);
@@ -245,14 +286,14 @@ class World
                 // Random chance to reproduce (not every frame when able)
                 if (random.NextDouble() < 0.002) // ~0.2% chance per frame when ready
                 {
-                    // Cost energy to reproduce
-                    var offspring = new Agent(
-                        agent.Position + new Vector2(
-                            (float)(random.NextDouble() - 0.5) * 20,
-                            (float)(random.NextDouble() - 0.5) * 20
-                        ),
-                        this
+                    // Birth position near parent
+                    Vector2 birthPos = agent.Position + new Vector2(
+                        (float)(random.NextDouble() - 0.5) * 20,
+                        (float)(random.NextDouble() - 0.5) * 20
                     );
+
+                    // Create offspring with genetic inheritance (asexual for now)
+                    var offspring = agent.CreateOffspring(null, birthPos, this);
                     agents.Add(offspring);
 
                     // Reproduction costs resources
@@ -598,8 +639,25 @@ class World
         Raylib.DrawText($"  General: {generalists}", 15, 205, 16, new Color(200, 200, 100, 255));
         Raylib.DrawText($"Homes: {homes.Count}", 15, 225, 18, new Color(255, 200, 150, 255));
 
+        // Day/Night overlay (drawn AFTER everything else in world space, BEFORE UI text)
+        Color ambientLight = GetAmbientLight();
+        if (ambientLight.A > 0)
+        {
+            // Draw fullscreen overlay for day/night
+            Raylib.DrawRectangle(0, 0, width, height, ambientLight);
+        }
+
+        // Time of day display
+        float timeOfDay = GetTimeOfDay();
+        int hour = (int)(timeOfDay * 24f);
+        int minute = (int)((timeOfDay * 24f - hour) * 60f);
+        string timeStr = $"{hour:D2}:{minute:D2}";
+        string dayPhase = IsNightTime() ? "Night" : "Day";
+        Raylib.DrawText($"Time: {timeStr} ({dayPhase})", 15, 250, 16, Color.White);
+        Raylib.DrawText($"Day {currentDay}, Year {currentYear}", 15, 270, 14, new Color(200, 200, 200, 255));
+
         // Camera info
-        Raylib.DrawText($"Zoom: {cameraZoom:F1}x (scroll)", 15, 250, 12, new Color(150, 150, 150, 255));
+        Raylib.DrawText($"Zoom: {cameraZoom:F1}x (scroll)", 15, 295, 12, new Color(150, 150, 150, 255));
     }
 
     public Food? FindNearestFood(Vector2 position)
@@ -748,4 +806,56 @@ class World
 
     public int Width => width;
     public int Height => height;
+
+    // DAY/NIGHT CYCLE HELPERS
+    public float GetTimeOfDay()
+    {
+        // Returns 0-1 where 0 is midnight, 0.5 is noon
+        return (worldTime % DayLength) / DayLength;
+    }
+
+    public bool IsNightTime()
+    {
+        float timeOfDay = GetTimeOfDay();
+        // Night is from 20:00 (0.833) to 06:00 (0.25)
+        return timeOfDay < 0.25f || timeOfDay > 0.833f;
+    }
+
+    public Color GetAmbientLight()
+    {
+        float timeOfDay = GetTimeOfDay();
+
+        // Dawn: 0.20 - 0.30 (5am-7am)
+        if (timeOfDay >= 0.20f && timeOfDay < 0.30f)
+        {
+            float t = (timeOfDay - 0.20f) / 0.10f;
+            return LerpColor(new Color(30, 30, 60, 180), new Color(255, 255, 255, 0), t);
+        }
+        // Day: 0.30 - 0.75 (7am-6pm)
+        else if (timeOfDay >= 0.30f && timeOfDay < 0.75f)
+        {
+            return new Color(255, 255, 255, 0); // Full brightness
+        }
+        // Dusk: 0.75 - 0.85 (6pm-8pm)
+        else if (timeOfDay >= 0.75f && timeOfDay < 0.85f)
+        {
+            float t = (timeOfDay - 0.75f) / 0.10f;
+            return LerpColor(new Color(255, 255, 255, 0), new Color(30, 30, 60, 180), t);
+        }
+        // Night: 0.85 - 0.20 next day
+        else
+        {
+            return new Color(30, 30, 60, 180); // Dark blue overlay
+        }
+    }
+
+    private Color LerpColor(Color a, Color b, float t)
+    {
+        return new Color(
+            (int)(a.R + (b.R - a.R) * t),
+            (int)(a.G + (b.G - a.G) * t),
+            (int)(a.B + (b.B - a.B) * t),
+            (int)(a.A + (b.A - a.A) * t)
+        );
+    }
 }

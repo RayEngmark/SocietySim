@@ -21,6 +21,33 @@ class Agent
     private float maxHydration = 100f;
     private float size = 10f; // Doubled size
 
+    // LIFE CYCLE SYSTEM
+    public enum LifeStage { Child, Adult, Elder }
+    private LifeStage lifeStage = LifeStage.Adult;
+    private float age = 0f; // In real-time seconds (not game days)
+    private const float ChildhoodDuration = 60f; // 1 minute as child
+    private const float AdulthoodDuration = 300f; // 5 minutes as adult
+    private const float MaxLifespan = 480f; // 8 minutes total max life
+    private bool isDead = false;
+
+    // FAMILY SYSTEM
+    private Agent? parent1 = null;
+    private Agent? parent2 = null;
+    private List<Agent> children = new List<Agent>();
+
+    // PERSONALITY TRAITS (0-1 scale)
+    private float generosity = 0.5f; // Willing to share vs selfish
+    private float bravery = 0.5f; // Risk-taking vs cautious
+    private float sociability = 0.5f; // Seeks company vs solitary
+
+    // EMOTIONAL STATE
+    private float happiness = 0.7f; // Current mood (0-1)
+    private float stress = 0.2f; // Current stress level (0-1)
+
+    // SLEEP SYSTEM
+    private bool isSleeping = false;
+    private float sleepiness = 0f; // 0-1, increases at night
+
     // Specialization - what this agent prefers to gather
     public enum Specialization { Generalist, FoodGatherer, WaterGatherer }
     private Specialization specialization;
@@ -84,12 +111,53 @@ class Agent
             else if (roll < 0.8) specialization = Specialization.WaterGatherer;
             else specialization = Specialization.Generalist;
         }
+
+        // Generate random personality traits (normal distribution around 0.5)
+        generosity = (float)(random.NextDouble() * 0.6 + 0.2); // 0.2 to 0.8
+        bravery = (float)(random.NextDouble() * 0.6 + 0.2);
+        sociability = (float)(random.NextDouble() * 0.6 + 0.2);
+
+        // Random starting age variation
+        age = (float)(random.NextDouble() * ChildhoodDuration); // Start somewhere in childhood
     }
 
     public void Update(float deltaTime)
     {
         aliveTime += deltaTime;
         bool seeking = false;
+
+        // SLEEP SYSTEM - Track sleepiness based on time of day
+        bool isNight = world.IsNightTime();
+        if (isNight)
+        {
+            sleepiness += deltaTime * 0.3f; // Get tired at night
+        }
+        else
+        {
+            sleepiness -= deltaTime * 0.2f; // Wake up during day
+        }
+        sleepiness = Math.Clamp(sleepiness, 0f, 1f);
+
+        // Decide whether to sleep
+        if (isNight && sleepiness > 0.6f && home != null && Vector2.Distance(position, home.Position) < 50f)
+        {
+            isSleeping = true;
+            currentAction = "Sleeping";
+        }
+        else if (!isNight || sleepiness < 0.3f)
+        {
+            isSleeping = false;
+        }
+
+        // Skip most actions if sleeping
+        if (isSleeping)
+        {
+            velocity *= 0.95f; // Slow down when sleeping
+            // Still consume resources but slower
+            energy -= 0.1f * deltaTime;
+            hydration -= 0.05f * deltaTime;
+            return; // Don't do anything else while sleeping
+        }
 
         // Calculate well-being (how well is this agent doing?)
         wellBeing = ((energy / maxEnergy) + (hydration / maxHydration)) / 2f;
@@ -379,11 +447,51 @@ class Agent
             consumptionRate = 0.8f; // 20% slower consumption near home (shelter benefit)
         }
 
-        energy -= 2f * deltaTime * consumptionRate;
+        // REALISTIC SLOWER CONSUMPTION - agents can survive 2-3 minutes without resources
+        energy -= 0.4f * deltaTime * consumptionRate; // Was 2f - now 5x slower
         if (energy < 0) energy = 0;
 
-        hydration -= 1.5f * deltaTime * consumptionRate;
+        hydration -= 0.3f * deltaTime * consumptionRate; // Was 1.5f - now 5x slower
         if (hydration < 0) hydration = 0;
+
+        // AGING SYSTEM - Age and life stage progression
+        age += deltaTime;
+
+        // Update life stage based on age
+        if (age < ChildhoodDuration)
+        {
+            lifeStage = LifeStage.Child;
+        }
+        else if (age < ChildhoodDuration + AdulthoodDuration)
+        {
+            lifeStage = LifeStage.Adult;
+        }
+        else
+        {
+            lifeStage = LifeStage.Elder;
+        }
+
+        // Death from old age
+        if (age >= MaxLifespan)
+        {
+            isDead = true;
+            return;
+        }
+
+        // Death from starvation (both resources depleted for extended time)
+        if (energy <= 0 && hydration <= 0)
+        {
+            isDead = true;
+            return;
+        }
+
+        // EMOTIONAL SYSTEM - Update emotions based on well-being
+        float targetHappiness = wellBeing; // Happy when needs met
+        happiness += (targetHappiness - happiness) * deltaTime * 0.5f; // Smooth transition
+
+        // Stress increases when needs are low
+        float targetStress = 1f - wellBeing;
+        stress += (targetStress - stress) * deltaTime * 0.3f;
     }
 
     public void Render()
@@ -401,11 +509,7 @@ class Agent
         float pulseSize = wellBeing < 0.4f ? MathF.Sin(aliveTime * 4f) * 2f : 0f;
         Raylib.DrawCircleLines((int)position.X, (int)position.Y, size + 8f + pulseSize, statusColor);
 
-        // VISUAL FEEDBACK: Draw target destination line
-        if (currentTarget.HasValue)
-        {
-            Raylib.DrawLineEx(position, currentTarget.Value, 2f, new Color(255, 255, 255, 100));
-        }
+        // Destination lines removed for cleaner visuals
 
         // VISUAL FEEDBACK: Draw action text
         if (!string.IsNullOrEmpty(currentAction))
@@ -660,13 +764,58 @@ class Agent
         hydration -= 30f;
     }
 
+    public Agent CreateOffspring(Agent? partner, Vector2 birthPosition, World world)
+    {
+        var offspring = new Agent(birthPosition, world);
+
+        // GENETIC INHERITANCE - Inherit traits from parents
+        if (partner != null)
+        {
+            // Mix personality traits (50% from each parent + small mutation)
+            offspring.generosity = (this.generosity + partner.generosity) / 2f + (float)(random.NextDouble() - 0.5) * 0.1f;
+            offspring.bravery = (this.bravery + partner.bravery) / 2f + (float)(random.NextDouble() - 0.5) * 0.1f;
+            offspring.sociability = (this.sociability + partner.sociability) / 2f + (float)(random.NextDouble() - 0.5) * 0.1f;
+
+            // Clamp to valid range
+            offspring.generosity = Math.Clamp(offspring.generosity, 0f, 1f);
+            offspring.bravery = Math.Clamp(offspring.bravery, 0f, 1f);
+            offspring.sociability = Math.Clamp(offspring.sociability, 0f, 1f);
+
+            // Set family relationships
+            offspring.parent1 = this;
+            offspring.parent2 = partner;
+            this.children.Add(offspring);
+            partner.children.Add(offspring);
+        }
+        else
+        {
+            // Asexual reproduction - inherit from single parent with mutation
+            offspring.generosity = this.generosity + (float)(random.NextDouble() - 0.5) * 0.15f;
+            offspring.bravery = this.bravery + (float)(random.NextDouble() - 0.5) * 0.15f;
+            offspring.sociability = this.sociability + (float)(random.NextDouble() - 0.5) * 0.15f;
+
+            offspring.generosity = Math.Clamp(offspring.generosity, 0f, 1f);
+            offspring.bravery = Math.Clamp(offspring.bravery, 0f, 1f);
+            offspring.sociability = Math.Clamp(offspring.sociability, 0f, 1f);
+
+            offspring.parent1 = this;
+            this.children.Add(offspring);
+        }
+
+        // Start as newborn (age 0)
+        offspring.age = 0f;
+        offspring.lifeStage = LifeStage.Child;
+
+        return offspring;
+    }
+
     public void AdoptSpecialization(Specialization newSpec)
     {
         // Agent learns a new specialization from successful neighbors
         specialization = newSpec;
     }
 
-    public bool IsDead => energy <= 0 || hydration <= 0;
+    public bool IsDead => isDead;
     public bool CanReproduce => energy > maxEnergy * 0.85f && hydration > maxHydration * 0.85f;
     public Specialization AgentSpecialization => specialization;
     public float WellBeing => wellBeing;
