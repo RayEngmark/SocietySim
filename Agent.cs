@@ -21,14 +21,15 @@ class Agent
     private float maxHydration = 100f;
     private float size = 10f; // Doubled size
 
-    // LIFE CYCLE SYSTEM
+    // LIFE CYCLE SYSTEM - REALISTIC LIFESPANS (check in day-to-day!)
     public enum LifeStage { Child, Adult, Elder }
     private LifeStage lifeStage = LifeStage.Adult;
     private float age = 0f; // In real-time seconds (not game days)
-    private const float ChildhoodDuration = 60f; // 1 minute as child
-    private const float AdulthoodDuration = 300f; // 5 minutes as adult
-    private const float MaxLifespan = 480f; // 8 minutes total max life
+    private const float ChildhoodDuration = 172800f; // 2 DAYS (48 hours) as child
+    private const float AdulthoodDuration = 604800f; // 1 WEEK (7 days) as adult
+    private const float MaxLifespan = 1209600f; // 2 WEEKS total lifespan - follow their whole life story!
     private bool isDead = false;
+    public string deathCause = ""; // Track how they died (for corpse system)
 
     // FAMILY SYSTEM
     private Agent? parent1 = null;
@@ -475,6 +476,7 @@ class Agent
         if (age >= MaxLifespan)
         {
             isDead = true;
+            deathCause = "Old Age";
             return;
         }
 
@@ -482,15 +484,19 @@ class Agent
         if (energy <= 0 && hydration <= 0)
         {
             isDead = true;
+            deathCause = "Starvation";
             return;
         }
 
-        // EMOTIONAL SYSTEM - Update emotions based on well-being
-        float targetHappiness = wellBeing; // Happy when needs met
+        // EMOTIONAL SYSTEM - Update emotions based on well-being and environment
+        float corpseMoodPenalty = world.GetCorpseMoodPenalty(position);
+        float targetHappiness = wellBeing + corpseMoodPenalty; // Happy when needs met, sad near corpses
+        targetHappiness = Math.Clamp(targetHappiness, 0f, 1f);
         happiness += (targetHappiness - happiness) * deltaTime * 0.5f; // Smooth transition
 
-        // Stress increases when needs are low
-        float targetStress = 1f - wellBeing;
+        // Stress increases when needs are low or near corpses
+        float targetStress = (1f - wellBeing) - corpseMoodPenalty; // Corpses cause stress
+        targetStress = Math.Clamp(targetStress, 0f, 1f);
         stress += (targetStress - stress) * deltaTime * 0.3f;
     }
 
@@ -816,6 +822,7 @@ class Agent
     }
 
     public bool IsDead => isDead;
+    public string DeathCause => deathCause;
     public bool CanReproduce => energy > maxEnergy * 0.85f && hydration > maxHydration * 0.85f;
     public Specialization AgentSpecialization => specialization;
     public float WellBeing => wellBeing;

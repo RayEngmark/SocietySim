@@ -245,7 +245,12 @@ class World
         currentDay = (int)(worldTime / DayLength) + 1;
         currentYear = (int)(worldTime / YearLength) + 1;
 
-        // DEATH HANDLING - Remove dead agents from simulation
+        // DEATH HANDLING - Create corpses and remove dead agents
+        foreach (var deadAgent in agents.Where(a => a.IsDead).ToList())
+        {
+            // Create corpse at agent's position
+            corpses.Add(new Corpse(deadAgent.Position, deadAgent.DeathCause));
+        }
         agents.RemoveAll(a => a.IsDead);
 
         foreach (var agent in agents.ToList()) // Use ToList to avoid modification during iteration
@@ -352,6 +357,18 @@ class World
         foreach (var home in homes)
         {
             home.Update(deltaTime);
+        }
+
+        // Update corpses (rot over time)
+        foreach (var corpse in corpses)
+        {
+            corpse.Update(deltaTime);
+        }
+
+        // Update wood sources
+        foreach (var wood in woodSources)
+        {
+            wood.Update(deltaTime);
         }
 
         // Update particles
@@ -575,6 +592,18 @@ class World
         foreach (var home in homes)
         {
             home.Render();
+        }
+
+        // Draw corpses (on the ground, under agents)
+        foreach (var corpse in corpses)
+        {
+            corpse.Render();
+        }
+
+        // Draw wood sources
+        foreach (var wood in woodSources)
+        {
+            wood.Render();
         }
 
         // Draw relationship lines between agents (only when zoomed in)
@@ -857,5 +886,20 @@ class World
             (int)(a.B + (b.B - a.B) * t),
             (int)(a.A + (b.A - a.A) * t)
         );
+    }
+
+    // Get mood penalty from nearby corpses
+    public float GetCorpseMoodPenalty(Vector2 position)
+    {
+        float totalPenalty = 0f;
+        foreach (var corpse in corpses)
+        {
+            float distance = Vector2.Distance(position, corpse.Position);
+            if (distance < 150f) // Mood radius from Corpse.cs
+            {
+                totalPenalty += corpse.GetMoodPenalty();
+            }
+        }
+        return totalPenalty;
     }
 }
